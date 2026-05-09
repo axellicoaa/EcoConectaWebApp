@@ -1,8 +1,12 @@
 export interface EcoObject {
-  id: number;
-  name: string;
+  id: string;
+  title: string;
   description: string;
   category: string;
-  type: string;
-  image?: string;
+  type: 'donation' | 'sale';
+  price?: number;
+  image: string;
+  location: string;
+  timeAgo: string;
+  seller: { name: string };
 }

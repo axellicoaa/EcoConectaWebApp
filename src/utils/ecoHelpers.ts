@@ -23,7 +23,7 @@ export function filterObjects(objects: EcoObject[], category: string, search: st
   return objects.filter(obj => {
     const matchCat = category === 'Todos' || obj.category === category;
     const q = search.toLowerCase();
-    const matchSearch = obj.name.toLowerCase().includes(q) || obj.description.toLowerCase().includes(q);
+    const matchSearch = obj.title.toLowerCase().includes(q) || obj.description.toLowerCase().includes(q);
     return matchCat && matchSearch;
   });
 }
