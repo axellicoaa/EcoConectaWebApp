@@ -1,30 +1,52 @@
-import React, { useState } from 'react';
-import { Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react'
+import { Search } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Leaf, Plus, Smartphone, BookOpen, Home as HomeIcon, Shirt,
-  LayoutGrid, Heart, MapPin, Clock, User, Bell, ChevronDown, Sparkles,
-} from 'lucide-react';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { Badge } from '../components/ui/Badge';
+  LayoutGrid, Heart, MapPin, Clock, User, Bell, ChevronDown, Sparkles, LogOut,
+} from 'lucide-react'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
+import { Badge } from '../components/ui/Badge'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '../components/ui/DropdownMenu';
-import { cn } from '../lib/utils';
-import { useObjects } from '../hooks/useObjects';
-import type { EcoObject } from '../types';
+} from '../components/ui/DropdownMenu'
+import { cn } from '../lib/utils'
+import { useListings } from '../hooks/useListings'
+import { useAuth } from '../context/AuthContext'
+import { filterObjects } from '../utils/ecoHelpers'
+import { supabase } from '../lib/supabase'
+import type { EcoObject, Category } from '../types'
 
-const categories = [
-  { id: 'all',         label: 'Todos',       icon: LayoutGrid },
-  { id: 'Electrónicos', label: 'Electrónicos', icon: Smartphone },
-  { id: 'Libros',      label: 'Libros',       icon: BookOpen },
-  { id: 'Hogar',       label: 'Hogar',        icon: HomeIcon },
-  { id: 'Ropa',        label: 'Ropa',         icon: Shirt },
-];
+// Mapa slug → icono (para categorías dinámicas desde DB)
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  electronicos: Smartphone,
+  libros: BookOpen,
+  hogar: HomeIcon,
+  ropa: Shirt,
+}
+
+function getCategoryIcon(slug: string) {
+  return ICON_MAP[slug] ?? LayoutGrid
+}
 
 // ── Header ──────────────────────────────────────────────────────────────────
 function AppHeader() {
+  const { user, profile, signOut } = useAuth()
+  const navigate = useNavigate()
+
+  const initials = (profile?.full_name ?? user?.email ?? '?')
+    .split(' ')
+    .map(w => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/')
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-8">
@@ -42,30 +64,52 @@ function AppHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative hidden sm:flex">
-            <Bell className="h-5 w-5 text-muted-foreground" />
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">3</span>
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary">
-                  <User className="h-4 w-4" />
-                </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          {user ? (
+            <>
+              <Button variant="ghost" size="icon" className="relative hidden sm:flex">
+                <Bell className="h-5 w-5 text-muted-foreground" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem>Mi perfil</DropdownMenuItem>
-              <DropdownMenuItem>Mis publicaciones</DropdownMenuItem>
-              <DropdownMenuItem>Favoritos</DropdownMenuItem>
-              <DropdownMenuItem>Configuración</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                      {initials}
+                    </div>
+                    <span className="hidden sm:inline text-sm font-medium">
+                      {profile?.full_name?.split(' ')[0] ?? 'Mi cuenta'}
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem asChild>
+                    <Link to="/perfil" className="flex items-center gap-2">
+                      <User className="h-4 w-4" /> Mi perfil
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/publicar" className="flex items-center gap-2">
+                      <Plus className="h-4 w-4" /> Mis publicaciones
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="flex items-center gap-2 text-destructive focus:text-destructive"
+                  >
+                    <LogOut className="h-4 w-4" /> Cerrar sesión
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/login">Iniciar sesión</Link>
+            </Button>
+          )}
 
           <Button asChild className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
-            <Link to="/publicar">
+            <Link to={user ? '/publicar' : '/login'}>
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Publicar</span>
             </Link>
@@ -73,10 +117,10 @@ function AppHeader() {
         </div>
       </div>
     </header>
-  );
+  )
 }
 
-// ── Hero ─────────────────────────────────────────────────────────────────────
+// ── Hero ──────────────────────────────────────────────────────────────────────
 function HeroSection({ search, onSearchChange }: { search: string; onSearchChange: (v: string) => void }) {
   return (
     <section className="relative overflow-hidden border-b border-border bg-gradient-to-b from-primary/5 to-background pb-12 pt-16">
@@ -114,31 +158,44 @@ function HeroSection({ search, onSearchChange }: { search: string; onSearchChang
         </div>
       </div>
     </section>
-  );
+  )
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-function CategoryFilter({ selected, onSelect }: { selected: string; onSelect: (cat: string) => void }) {
+function CategoryFilter({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: Category[]
+  selected: string
+  onSelect: (slug: string) => void
+}) {
+  const all = [{ id: 'all', name: 'Todos', slug: 'all', icon: 'LayoutGrid', created_at: '' }, ...categories]
+
   return (
     <aside className="hidden w-64 shrink-0 lg:block">
       <div className="sticky top-24">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Categorías</h3>
         <nav className="space-y-1">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => onSelect(cat.id)}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all',
-                selected === cat.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-              )}
-            >
-              <cat.icon className="h-5 w-5" />
-              {cat.label}
-            </button>
-          ))}
+          {all.map((cat) => {
+            const Icon = cat.slug === 'all' ? LayoutGrid : getCategoryIcon(cat.slug)
+            return (
+              <button
+                key={cat.slug}
+                onClick={() => onSelect(cat.slug)}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all',
+                  selected === cat.slug
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {cat.name}
+              </button>
+            )
+          })}
         </nav>
 
         <div className="mt-8 rounded-2xl border border-border bg-card p-5">
@@ -160,35 +217,60 @@ function CategoryFilter({ selected, onSelect }: { selected: string; onSelect: (c
         </div>
       </div>
     </aside>
-  );
+  )
 }
 
 // ── Mobile chips ──────────────────────────────────────────────────────────────
-function MobileCategoryChips({ selected, onSelect }: { selected: string; onSelect: (cat: string) => void }) {
+function MobileCategoryChips({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: Category[]
+  selected: string
+  onSelect: (slug: string) => void
+}) {
+  const all = [{ id: 'all', name: 'Todos', slug: 'all', icon: 'LayoutGrid', created_at: '' }, ...categories]
+
   return (
     <div className="flex gap-2 overflow-x-auto pb-2 lg:hidden">
-      {categories.map((cat) => (
-        <button
-          key={cat.id}
-          onClick={() => onSelect(cat.id)}
-          className={cn(
-            'flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all',
-            selected === cat.id
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <cat.icon className="h-4 w-4" />
-          {cat.label}
-        </button>
-      ))}
+      {all.map((cat) => {
+        const Icon = cat.slug === 'all' ? LayoutGrid : getCategoryIcon(cat.slug)
+        return (
+          <button
+            key={cat.slug}
+            onClick={() => onSelect(cat.slug)}
+            className={cn(
+              'flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all',
+              selected === cat.slug
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {cat.name}
+          </button>
+        )
+      })}
     </div>
-  );
+  )
 }
 
 // ── Product Card ──────────────────────────────────────────────────────────────
 function ProductCard({ product }: { product: EcoObject }) {
-  const [isLiked, setIsLiked] = useState(false);
+  const { user } = useAuth()
+  const [isLiked, setIsLiked] = useState(false)
+  const navigate = useNavigate()
+
+  async function toggleFavorite() {
+    if (!user) { navigate('/login'); return }
+    if (isLiked) {
+      await supabase.from('favorites').delete().eq('user_id', user.id).eq('listing_id', product.id)
+    } else {
+      await supabase.from('favorites').insert({ user_id: user.id, listing_id: product.id })
+    }
+    setIsLiked(v => !v)
+  }
 
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5">
@@ -197,7 +279,7 @@ function ProductCard({ product }: { product: EcoObject }) {
           src={product.image}
           alt={product.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=500&h=350&fit=crop'; }}
+          onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=500&h=350&fit=crop' }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
@@ -213,13 +295,13 @@ function ProductCard({ product }: { product: EcoObject }) {
         </Badge>
 
         <button
-          onClick={() => setIsLiked(!isLiked)}
+          onClick={toggleFavorite}
           className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm transition-all hover:bg-black/50"
         >
           <Heart className={cn('h-5 w-5 transition-colors', isLiked ? 'fill-red-500 text-red-500' : 'text-white')} />
         </button>
 
-        {product.price && (
+        {product.price !== undefined && (
           <div className="absolute bottom-3 right-3 rounded-lg bg-black/60 px-3 py-1.5 text-lg font-bold text-white backdrop-blur-sm">
             €{product.price}
           </div>
@@ -229,7 +311,7 @@ function ProductCard({ product }: { product: EcoObject }) {
       <div className="p-4">
         <div className="mb-2 flex items-start justify-between gap-2">
           <h3 className="font-semibold leading-tight text-foreground line-clamp-1">{product.title}</h3>
-          {!product.price && <span className="shrink-0 text-lg font-bold text-primary">Gratis</span>}
+          {product.price === undefined && <span className="shrink-0 text-lg font-bold text-primary">Gratis</span>}
         </div>
 
         <p className="mb-3 text-sm text-muted-foreground line-clamp-2">{product.description}</p>
@@ -253,22 +335,16 @@ function ProductCard({ product }: { product: EcoObject }) {
         </div>
       </div>
     </article>
-  );
+  )
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const Home: React.FC = () => {
-  const { objects } = useObjects();
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [search, setSearch] = useState('');
+  const { objects, categories, loading, error } = useListings()
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [search, setSearch] = useState('')
 
-  const filtered = objects.filter((p) => {
-    const matchCat = selectedCategory === 'all' || p.category === selectedCategory;
-    const matchSearch = search === '' ||
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  const filtered = filterObjects(objects, selectedCategory, search)
 
   return (
     <div className="min-h-screen bg-background">
@@ -277,16 +353,24 @@ const Home: React.FC = () => {
 
       <main className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         <div className="flex gap-8">
-          <CategoryFilter selected={selectedCategory} onSelect={setSelectedCategory} />
+          <CategoryFilter
+            categories={categories}
+            selected={selectedCategory}
+            onSelect={setSelectedCategory}
+          />
 
           <div className="flex-1">
-            <MobileCategoryChips selected={selectedCategory} onSelect={setSelectedCategory} />
+            <MobileCategoryChips
+              categories={categories}
+              selected={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
 
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Objetos disponibles</h2>
                 <p className="text-sm text-muted-foreground">
-                  {filtered.length} {filtered.length === 1 ? 'resultado' : 'resultados'}
+                  {loading ? 'Cargando...' : `${filtered.length} ${filtered.length === 1 ? 'resultado' : 'resultados'}`}
                 </p>
               </div>
 
@@ -305,7 +389,19 @@ const Home: React.FC = () => {
               </DropdownMenu>
             </div>
 
-            {filtered.length === 0 ? (
+            {error && (
+              <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                Error al cargar: {error}
+              </div>
+            )}
+
+            {loading ? (
+              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-80 animate-pulse rounded-2xl bg-secondary" />
+                ))}
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/50 py-16">
                 <Search className="mb-4 h-12 w-12 text-muted-foreground/50" />
                 <h3 className="mb-2 text-lg font-medium">No se encontraron resultados</h3>
@@ -336,8 +432,7 @@ const Home: React.FC = () => {
         </div>
       </footer>
     </div>
-  );
-};
+  )
+}
 
-export default Home;
-
+export default Home
