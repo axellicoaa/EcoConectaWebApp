@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle, Home, Package, Leaf } from 'lucide-react'
 import { Button } from '../components/ui/Button'
