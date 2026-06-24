@@ -1,16 +1,22 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../types'
+import SessionTimeoutModal from '../components/SessionTimeoutModal'
+
+const INACTIVITY_MS = 30 * 60 * 1000  // 30 minutes
+const WARNING_MS    = 25 * 60 * 1000  // warn at 25 min (5 min before logout)
 
 interface AuthContextType {
   user: User | null
   session: Session | null
   profile: Profile | null
   loading: boolean
+  showTimeoutWarning: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
+  extendSession: () => void
   updateProfile: (data: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>>) => Promise<{ error: string | null }>
   refreshProfile: () => Promise<void>
 }
@@ -18,13 +24,51 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]       = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser]                     = useState<User | null>(null)
+  const [session, setSession]               = useState<Session | null>(null)
+  const [profile, setProfile]               = useState<Profile | null>(null)
+  const [loading, setLoading]               = useState(true)
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false)
+
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const logoutTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function clearTimers() {
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current)
+    if (logoutTimerRef.current)  clearTimeout(logoutTimerRef.current)
+  }
+
+  function resetTimers() {
+    clearTimers()
+    setShowTimeoutWarning(false)
+    warningTimerRef.current = setTimeout(() => setShowTimeoutWarning(true), WARNING_MS)
+    logoutTimerRef.current  = setTimeout(() => supabase.auth.signOut(), INACTIVITY_MS)
+  }
+
+  // Track inactivity only while a session is active
+  useEffect(() => {
+    if (!session) {
+      clearTimers()
+      setShowTimeoutWarning(false)
+      return
+    }
+
+    const EVENTS = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'] as const
+    EVENTS.forEach(e => window.addEventListener(e, resetTimers, { passive: true }))
+    resetTimers()
+
+    return () => {
+      clearTimers()
+      EVENTS.forEach(e => window.removeEventListener(e, resetTimers))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session])
+
+  function extendSession() {
+    resetTimers()
+  }
 
   async function fetchProfile(userId: string) {
-    // Upsert garantiza que el perfil exista (cubre usuarios creados antes del trigger)
     await supabase
       .from('profiles')
       .upsert({ id: userId }, { onConflict: 'id', ignoreDuplicates: true })
@@ -38,7 +82,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Obtiene sesión actual al montar (access_token + refresh_token manejados por el SDK)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
@@ -46,7 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
     })
 
-    // Escucha cambios de sesión (refresh automático incluido)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       setUser(session?.user ?? null)
@@ -75,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
+    clearTimers()
     await supabase.auth.signOut()
   }
 
@@ -94,9 +137,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, loading, signIn, signUp, signOut, updateProfile, refreshProfile }}
+      value={{
+        user, session, profile, loading, showTimeoutWarning,
+        signIn, signUp, signOut, extendSession, updateProfile, refreshProfile,
+      }}
     >
       {children}
+      <SessionTimeoutModal
+        open={showTimeoutWarning}
+        onExtend={extendSession}
+        onSignOut={signOut}
+      />
     </AuthContext.Provider>
   )
 }

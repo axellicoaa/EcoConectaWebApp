@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Leaf, Plus, Smartphone, BookOpen, Home as HomeIcon, Shirt,
   LayoutGrid, Heart, MapPin, Clock, User, Bell, ChevronDown, Sparkles, LogOut,
+  Navigation, X, TrendingUp, Gift, ShoppingBag, CheckCircle2,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -16,7 +17,10 @@ import { useListings } from '../hooks/useListings'
 import { useAuth } from '../context/AuthContext'
 import { filterObjects } from '../utils/ecoHelpers'
 import { supabase } from '../lib/supabase'
+import { useKPIs } from '../hooks/useKPIs'
+import { useCity } from '../hooks/useCity'
 import type { EcoObject, Category } from '../types'
+import type { KPIs } from '../hooks/useKPIs'
 
 // Mapa slug → icono (para categorías dinámicas desde DB)
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -166,10 +170,12 @@ function CategoryFilter({
   categories,
   selected,
   onSelect,
+  kpis,
 }: {
   categories: Category[]
   selected: string
   onSelect: (slug: string) => void
+  kpis: KPIs
 }) {
   const all = [{ id: 'all', name: 'Todos', slug: 'all', icon: 'LayoutGrid', created_at: '' }, ...categories]
 
@@ -199,19 +205,38 @@ function CategoryFilter({
         </nav>
 
         <div className="mt-8 rounded-2xl border border-border bg-card p-5">
-          <h4 className="mb-4 text-sm font-semibold">Impacto Comunitario</h4>
+          <div className="mb-4 flex items-center justify-between">
+            <h4 className="text-sm font-semibold">Impacto en vivo</h4>
+            <span className="flex items-center gap-1.5 text-xs text-green-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              En tiempo real
+            </span>
+          </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Objetos reutilizados</span>
-              <span className="font-semibold text-primary">1,234</span>
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5" /> Publicaciones activas
+              </span>
+              <span className="font-bold text-primary">{kpis.active.toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Donaciones este mes</span>
-              <span className="font-semibold text-primary">89</span>
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Gift className="h-3.5 w-3.5" /> Donaciones
+              </span>
+              <span className="font-bold text-primary">{kpis.donations.toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">CO₂ ahorrado</span>
-              <span className="font-semibold text-primary">450kg</span>
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <ShoppingBag className="h-3.5 w-3.5" /> En venta
+              </span>
+              <span className="font-bold text-primary">{kpis.sales.toLocaleString()}</span>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Reutilizados
+              </span>
+              <span className="font-bold text-green-600">{kpis.completed.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -274,6 +299,12 @@ function ProductCard({ product }: { product: EcoObject }) {
 
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5">
+      {/* Clickable overlay — covers the whole card except the favorite button */}
+      <Link
+        to={`/listing/${product.id}`}
+        className="absolute inset-0 z-10"
+        aria-label={`Ver ${product.title}`}
+      />
       <div className="relative aspect-[4/3] overflow-hidden">
         <img
           src={product.image}
@@ -296,7 +327,7 @@ function ProductCard({ product }: { product: EcoObject }) {
 
         <button
           onClick={toggleFavorite}
-          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm transition-all hover:bg-black/50"
+          className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm transition-all hover:bg-black/50"
         >
           <Heart className={cn('h-5 w-5 transition-colors', isLiked ? 'fill-red-500 text-red-500' : 'text-white')} />
         </button>
@@ -341,10 +372,18 @@ function ProductCard({ product }: { product: EcoObject }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const Home: React.FC = () => {
   const { objects, categories, loading, error } = useListings()
+  const kpis                                    = useKPIs()
+  const { city }                                = useCity()
   const [selectedCategory, setSelectedCategory] = useState('all')
-  const [search, setSearch] = useState('')
+  const [search, setSearch]                     = useState('')
+  const [nearbyOnly, setNearbyOnly]             = useState(false)
 
-  const filtered = filterObjects(objects, selectedCategory, search)
+  const nearbyObjects = city
+    ? objects.filter(o => o.location?.toLowerCase().includes(city.toLowerCase()))
+    : []
+
+  const baseObjects = nearbyOnly && city ? nearbyObjects : objects
+  const filtered    = filterObjects(baseObjects, selectedCategory, search)
 
   return (
     <div className="min-h-screen bg-background">
@@ -357,6 +396,7 @@ const Home: React.FC = () => {
             categories={categories}
             selected={selectedCategory}
             onSelect={setSelectedCategory}
+            kpis={kpis}
           />
 
           <div className="flex-1">
@@ -365,6 +405,43 @@ const Home: React.FC = () => {
               selected={selectedCategory}
               onSelect={setSelectedCategory}
             />
+
+            {/* Location banner */}
+            {city && nearbyObjects.length > 0 && (
+              <div className={cn(
+                'mb-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors',
+                nearbyOnly
+                  ? 'border-primary/30 bg-primary/5'
+                  : 'border-border bg-card',
+              )}>
+                <div className="flex items-center gap-2 text-sm">
+                  <Navigation className="h-4 w-4 text-primary shrink-0" />
+                  <span className="text-muted-foreground">
+                    <span className="font-semibold text-foreground">{nearbyObjects.length}</span>{' '}
+                    producto{nearbyObjects.length !== 1 ? 's' : ''} cerca de ti en{' '}
+                    <span className="font-semibold text-primary">{city}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setNearbyOnly(v => !v)}
+                    className={cn(
+                      'shrink-0 rounded-lg px-3 py-1 text-xs font-medium transition-colors',
+                      nearbyOnly
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-foreground hover:bg-primary/10',
+                    )}
+                  >
+                    {nearbyOnly ? 'Ver todos' : 'Ver cercanos'}
+                  </button>
+                  {nearbyOnly && (
+                    <button onClick={() => setNearbyOnly(false)} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="mb-6 flex items-center justify-between">
               <div>
